@@ -1,0 +1,137 @@
+<!doctype html>
+<!--
+  Trianglify (reproduction)
+  Inspired by: https://trianglify.io (the original library is GPL-3.0; this
+  is a clean-room reimplementation using a jittered grid, no source copied).
+  What it does: generates low-poly triangle background art.
+  For Claude: self-contained. Tune CONFIG / palettes, or call render() with
+  your own options.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trianglify (repro)</title>
+<style>
+  body { margin:0; background:#0e0e10; color:#e8e8ea; font:14px/1.5 ui-monospace,monospace; }
+  header { padding:16px 20px; border-bottom:1px solid #26262b; }
+  h1 { font-size:15px; margin:0; }
+  h1 span { color:#8b8b93; font-weight:400; }
+  .bar { display:flex; flex-wrap:wrap; gap:14px; align-items:center; padding:12px 20px; background:#17171a; }
+  label { color:#8b8b93; display:flex; gap:8px; align-items:center; }
+  select,input { accent-color:#7ee787; background:#101013; color:#e8e8ea; border:1px solid #2c2c33; border-radius:6px; padding:4px 8px; }
+  button { background:#7ee787; border:0; border-radius:6px; padding:6px 12px; font:inherit; cursor:pointer; }
+  button.ghost { background:#26262c; color:#e8e8ea; }
+  canvas { display:block; width:100vw; height:calc(100vh - 116px); }
+</style>
+</head>
+<body>
+<header><h1>Trianglify <span>- low-poly backgrounds - repro of trianglify.io</span></h1></header>
+<div class="bar">
+  <label>Palette
+    <select id="palette"></select>
+  </label>
+  <label>Cell size <input type="range" id="cell" min="30" max="300" value="110"></label>
+  <label>Jitter <input type="range" id="jitter" min="0" max="100" value="60"></label>
+  <button id="regen" class="ghost">Randomize seed</button>
+  <button id="png">Download PNG</button>
+</div>
+<canvas id="out"></canvas>
+
+<script>
+// ---- CONFIG ----------------------------------------------------------
+const PALETTES = {
+  sunset:  ["#0d324d","#7f5a83","#e86a92","#f7b267","#f4845f"],
+  ocean:   ["#03045e","#0077b6","#00b4d8","#90e0ef","#caf0f8"],
+  forest:  ["#1b4332","#2d6a4f","#40916c","#74c69d","#b7e4c7"],
+  ember:   ["#370617","#9d0208","#dc2f02","#f48c06","#ffba08"],
+  vapor:   ["#3d348b","#7678ed","#f7b801","#f18701","#f35b04"],
+  mono:    ["#111111","#3d3d3d","#6e6e6e","#a3a3a3","#dcdcdc"]
+};
+// ----------------------------------------------------------------------
+
+let seed = Math.floor(Math.random() * 1e9);
+
+// tiny seeded RNG (mulberry32)
+function rng(s) {
+  return function() {
+    s |= 0; s = s + 0x6D2B79F5 | 0;
+    let t = Math.imul(s ^ s >>> 15, 1 | s);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function hexLerp(a, b, t) {
+  const pa = [1,3,5].map(i => parseInt(a.slice(i, i+2), 16));
+  const pb = [1,3,5].map(i => parseInt(b.slice(i, i+2), 16));
+  return "rgb(" + pa.map((v, i) => Math.round(v + (pb[i] - v) * t)).join(",") + ")";
+}
+
+function samplePalette(pal, t) {
+  t = Math.max(0, Math.min(1, t));
+  const seg = Math.min(pal.length - 2, Math.floor(t * (pal.length - 1)));
+  return hexLerp(pal[seg], pal[seg + 1], t * (pal.length - 1) - seg);
+}
+
+function render() {
+  const canvas = document.getElementById("out");
+  const W = canvas.width = canvas.clientWidth * devicePixelRatio;
+  const H = canvas.height = canvas.clientHeight * devicePixelRatio;
+  const ctx = canvas.getContext("2d");
+  const cell = +document.getElementById("cell").value * devicePixelRatio;
+  const jitter = +document.getElementById("jitter").value / 100;
+  const pal = PALETTES[document.getElementById("palette").value];
+  const rand = rng(seed);
+
+  const cols = Math.ceil(W / cell) + 2, rows = Math.ceil(H / cell) + 2;
+  const pts = [];
+  for (let y = 0; y < rows; y++) {
+    pts[y] = [];
+    for (let x = 0; x < cols; x++) {
+      const jx = (rand() - 0.5) * cell * jitter;
+      const jy = (rand() - 0.5) * cell * jitter;
+      pts[y][x] = [x * cell - cell / 2 + jx, y * cell - cell / 2 + jy];
+    }
+  }
+  for (let y = 0; y < rows - 1; y++)
+    for (let x = 0; x < cols - 1; x++) {
+      const tris = rand() < 0.5
+        ? [[pts[y][x], pts[y][x+1], pts[y+1][x]], [pts[y][x+1], pts[y+1][x+1], pts[y+1][x]]]
+        : [[pts[y][x], pts[y][x+1], pts[y+1][x+1]], [pts[y][x], pts[y+1][x+1], pts[y+1][x]]];
+      for (const tri of tris) {
+        const cy = (tri[0][1] + tri[1][1] + tri[2][1]) / 3 / H;
+        ctx.fillStyle = samplePalette(pal, cy + (rand() - 0.5) * 0.12);
+        ctx.beginPath();
+        ctx.moveTo(tri[0][0], tri[0][1]);
+        ctx.lineTo(tri[1][0], tri[1][1]);
+        ctx.lineTo(tri[2][0], tri[2][1]);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = ctx.fillStyle;  // hides hairline gaps
+        ctx.stroke();
+      }
+    }
+}
+
+const sel = document.getElementById("palette");
+for (const name of Object.keys(PALETTES)) {
+  const o = document.createElement("option");
+  o.value = o.textContent = name;
+  sel.appendChild(o);
+}
+sel.value = "sunset";
+for (const id of ["palette","cell","jitter"])
+  document.getElementById(id).oninput = render;
+document.getElementById("regen").onclick = () => { seed = Math.floor(Math.random()*1e9); render(); };
+document.getElementById("png").onclick = () => {
+  const a = document.createElement("a");
+  a.download = "trianglify.png";
+  a.href = document.getElementById("out").toDataURL("image/png");
+  a.click();
+};
+addEventListener("resize", render);
+render();
+</script>
+</body>
+</html>
