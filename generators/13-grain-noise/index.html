@@ -1,0 +1,101 @@
+<!doctype html>
+<!--
+  Grain / Noise (reproduction)
+  Inspired by: https://fffuel.co/nnnoise/ (fffuel is free; clean-room
+  reimplementation using SVG feTurbulence).
+  What it does: generates a grainy-noise overlay as inline SVG, great over
+  gradients for the "grainy gradient" aesthetic.
+  For Claude: self-contained. Copy SVG gives a ready overlay element; the
+  CSS snippet shows how to layer it over any background.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grain / Noise (repro)</title>
+<style>
+  body { margin:0; background:#0e0e10; color:#e8e8ea; font:14px/1.5 ui-monospace,monospace; }
+  header { padding:16px 20px; border-bottom:1px solid #26262b; }
+  h1 { font-size:15px; margin:0; }
+  h1 span { color:#8b8b93; font-weight:400; }
+  .bar { display:flex; flex-wrap:wrap; gap:14px; align-items:center; padding:12px 20px; background:#17171a; }
+  label { color:#8b8b93; display:flex; gap:8px; align-items:center; }
+  select,input { accent-color:#7ee787; background:#101013; color:#e8e8ea; border:1px solid #2c2c33; border-radius:6px; padding:4px 8px; }
+  input[type=color] { padding:1px 2px; width:42px; height:28px; }
+  button { background:#7ee787; color:#000; border:0; border-radius:6px; padding:6px 12px; font:inherit; cursor:pointer; }
+  button.ghost { background:#26262c; color:#e8e8ea; }
+  #stage { position:relative; height:calc(100vh - 130px); }
+  #bg, #noise { position:absolute; inset:0; width:100%; height:100%; }
+</style>
+</head>
+<body>
+<header><h1>Grain / Noise <span>- SVG turbulence grain - repro of fffuel.co/nnnoise</span></h1></header>
+<div class="bar">
+  <label>Base color <input type="color" id="c1" value="#312e81"></label>
+  <label>Accent <input type="color" id="c2" value="#a78bfa"></label>
+  <label>Frequency <input type="range" id="freq" min="10" max="150" value="80"></label>
+  <label>Octaves <input type="range" id="oct" min="1" max="5" value="3"></label>
+  <label>Opacity <input type="range" id="op" min="5" max="100" value="35"></label>
+  <label>Blend
+    <select id="blend">
+      <option value="overlay">overlay</option>
+      <option value="soft-light">soft-light</option>
+      <option value="multiply">multiply</option>
+      <option value="screen">screen</option>
+    </select>
+  </label>
+  <button id="copy">Copy SVG</button>
+  <button id="copycss" class="ghost">Copy overlay CSS</button>
+</div>
+<div id="stage">
+  <div id="bg"></div>
+  <svg id="noise" xmlns="http://www.w3.org/2000/svg"></svg>
+</div>
+
+<script>
+function render() {
+  const c1 = document.getElementById("c1").value, c2 = document.getElementById("c2").value;
+  const freq = (+document.getElementById("freq").value / 100).toFixed(2);
+  const oct = +document.getElementById("oct").value;
+  const op = +document.getElementById("op").value / 100;
+  const blend = document.getElementById("blend").value;
+
+  document.getElementById("bg").style.background = `linear-gradient(135deg, ${c1}, ${c2})`;
+  const noise = document.getElementById("noise");
+  noise.style.mixBlendMode = blend;
+  noise.style.opacity = op;
+  noise.innerHTML =
+`<filter id="g"><feTurbulence type="fractalNoise" baseFrequency="${freq}" numOctaves="${oct}" stitchTiles="stitch"/></filter>
+<rect width="100%" height="100%" filter="url(#g)"/>`;
+  noise.dataset.svg =
+`<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;inset:0;width:100%;height:100%;mix-blend-mode:${blend};opacity:${op};pointer-events:none">
+  <filter id="g"><feTurbulence type="fractalNoise" baseFrequency="${freq}" numOctaves="${oct}" stitchTiles="stitch"/></filter>
+  <rect width="100%" height="100%" filter="url(#g)"/>
+</svg>`;
+  noise.dataset.css =
+`/* put this on a child/overlay element over your gradient */
+.grain::after {
+  content: "";
+  position: absolute; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='${freq}' numOctaves='${oct}' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23g)'/%3E%3C/svg%3E");
+  mix-blend-mode: ${blend};
+  opacity: ${op};
+  pointer-events: none;
+}`;
+}
+for (const id of ["c1","c2","freq","oct","op","blend"])
+  document.getElementById(id).oninput = render;
+document.getElementById("copy").onclick = async () => {
+  await navigator.clipboard.writeText(document.getElementById("noise").dataset.svg);
+  document.getElementById("copy").textContent = "Copied!";
+  setTimeout(() => document.getElementById("copy").textContent = "Copy SVG", 1200);
+};
+document.getElementById("copycss").onclick = async () => {
+  await navigator.clipboard.writeText(document.getElementById("noise").dataset.css);
+  document.getElementById("copycss").textContent = "Copied!";
+  setTimeout(() => document.getElementById("copycss").textContent = "Copy overlay CSS", 1200);
+};
+render();
+</script>
+</body>
+</html>
