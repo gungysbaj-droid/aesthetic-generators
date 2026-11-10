@@ -1,0 +1,149 @@
+<!doctype html>
+<!--
+  Dither It (reproduction)
+  Inspired by: https://ditherit.com (clean-room reimplementation; dithering
+  algorithms are classic published techniques - Bayer ordered, Floyd-Steinberg,
+  Atkinson).
+  What it does: reduces an image to a small palette with dithering.
+  For Claude: self-contained. The dither() core is reusable; tune CONFIG.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dither It (repro)</title>
+<style>
+  body { margin:0; background:#0e0e10; color:#e8e8ea; font:14px/1.5 ui-monospace,monospace; }
+  header { padding:16px 20px; border-bottom:1px solid #26262b; }
+  h1 { font-size:15px; margin:0; }
+  h1 span { color:#8b8b93; font-weight:400; }
+  .bar { display:flex; flex-wrap:wrap; gap:14px; align-items:center; padding:12px 20px; background:#17171a; }
+  label { color:#8b8b93; display:flex; gap:8px; align-items:center; }
+  select,input { accent-color:#7ee787; background:#101013; color:#e8e8ea; border:1px solid #2c2c33; border-radius:6px; padding:4px 8px; }
+  button { background:#7ee787; border:0; border-radius:6px; padding:6px 12px; font:inherit; cursor:pointer; }
+  #drop { margin:20px; padding:40px; border:1px dashed #3a3a42; border-radius:10px; text-align:center; color:#8b8b93; cursor:pointer; }
+  canvas { display:block; margin:20px auto; max-width:calc(100% - 40px); image-rendering:pixelated; }
+</style>
+</head>
+<body>
+<header><h1>Dither It <span>- image dithering - repro of ditherit.com</span></h1></header>
+<div class="bar">
+  <label>Algorithm
+    <select id="algo">
+      <option value="bayer2">Bayer 2x2</option>
+      <option value="bayer4" selected>Bayer 4x4</option>
+      <option value="bayer8">Bayer 8x8</option>
+      <option value="fs">Floyd-Steinberg</option>
+      <option value="atkinson">Atkinson</option>
+    </select>
+  </label>
+  <label>Levels <input type="range" id="levels" min="2" max="8" value="2"></label>
+  <label>Pixel scale <input type="range" id="scale" min="1" max="8" value="3"></label>
+  <label><input type="checkbox" id="serp" checked> Serpentine</label>
+  <button id="png">Download PNG</button>
+</div>
+<div id="drop">Drop an image here or click to choose<input type="file" id="file" accept="image/*" hidden></div>
+<canvas id="out"></canvas>
+
+<script>
+// ---- CONFIG ----------------------------------------------------------
+const MAX_WORK_WIDTH = 500;  // downscale source to this working width
+// ----------------------------------------------------------------------
+const BAYER = {
+  bayer2: [[0,2],[3,1]],
+  bayer4: [[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]],
+  bayer8: [[0,32,8,40,2,34,10,42],[48,16,56,24,50,18,58,26],[12,44,4,36,14,46,6,38],
+           [60,28,52,20,62,30,54,22],[3,35,11,43,1,33,9,41],[51,19,59,27,49,17,57,25],
+           [15,47,7,39,13,45,5,37],[63,31,55,23,61,29,53,21]]
+};
+
+const out = document.getElementById("out");
+const octx = out.getContext("2d");
+let img = null;
+
+function quantize(v, levels) {
+  return Math.round(v / 255 * (levels - 1)) * 255 / (levels - 1);
+}
+
+function dither(lum, w, h, algo, levels, serpentine) {
+  const out = new Float32Array(lum);
+  if (BAYER[algo]) {
+    const m = BAYER[algo], n = m.length, div = n * n;
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        const t = (m[y % n][x % n] + 0.5) / div * 255;
+        out[i] = quantize(Math.max(0, Math.min(255, lum[i] + t - 128)), levels);
+      }
+    return out;
+  }
+  // error diffusion kernels: [dx, dy, weight]
+  const kernels = {
+    fs:       [[1,0,7/16],[-1,1,3/16],[0,1,5/16],[1,1,1/16]],
+    atkinson: [[1,0,1/8],[2,0,1/8],[-1,1,1/8],[0,1,1/8],[1,1,1/8],[0,2,1/8]]
+  };
+  const k = kernels[algo];
+  for (let y = 0; y < h; y++) {
+    const dir = serpentine && y % 2 ? -1 : 1;
+    for (let xi = 0; xi < w; xi++) {
+      const x = dir > 0 ? xi : w - 1 - xi;
+      const i = y * w + x;
+      const v = quantize(out[i], levels);
+      const err = out[i] - v;
+      out[i] = v;
+      for (const [dx, dy, wt] of k) {
+        const nx = x + dx * dir, ny = y + dy;
+        if (nx >= 0 && nx < w && ny < h) out[ny * w + nx] += err * wt;
+      }
+    }
+  }
+  return out;
+}
+
+function render() {
+  if (!img) return;
+  const scale = +document.getElementById("scale").value;
+  const levels = +document.getElementById("levels").value;
+  const algo = document.getElementById("algo").value;
+  const serp = document.getElementById("serp").checked;
+  const w = Math.min(MAX_WORK_WIDTH, img.width);
+  const h = Math.round(w * img.height / img.width);
+  const off = document.createElement("canvas");
+  off.width = w; off.height = h;
+  const c = off.getContext("2d");
+  c.drawImage(img, 0, 0, w, h);
+  const id = c.getImageData(0, 0, w, h);
+  const lum = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++)
+    lum[i] = 0.2126*id.data[i*4] + 0.7152*id.data[i*4+1] + 0.0722*id.data[i*4+2];
+  const res = dither(lum, w, h, algo, levels, serp);
+  for (let i = 0; i < w * h; i++) {
+    const v = Math.max(0, Math.min(255, res[i]));
+    id.data[i*4] = id.data[i*4+1] = id.data[i*4+2] = v;
+  }
+  c.putImageData(id, 0, 0);
+  out.width = w * scale; out.height = h * scale;
+  octx.imageSmoothingEnabled = false;
+  octx.drawImage(off, 0, 0, out.width, out.height);
+}
+
+function loadFile(f) {
+  const url = URL.createObjectURL(f);
+  const im = new Image();
+  im.onload = () => { img = im; URL.revokeObjectURL(url); render(); };
+  im.src = url;
+}
+const drop = document.getElementById("drop"), file = document.getElementById("file");
+drop.onclick = () => file.click();
+file.onchange = e => e.target.files[0] && loadFile(e.target.files[0]);
+drop.ondragover = e => e.preventDefault();
+drop.ondrop = e => { e.preventDefault(); e.dataTransfer.files[0] && loadFile(e.dataTransfer.files[0]); };
+for (const id of ["algo","levels","scale","serp"])
+  document.getElementById(id).oninput = render;
+document.getElementById("png").onclick = () => {
+  const a = document.createElement("a");
+  a.download = "dither.png"; a.href = out.toDataURL("image/png"); a.click();
+};
+</script>
+</body>
+</html>
