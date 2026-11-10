@@ -1,0 +1,78 @@
+<!doctype html>
+<!--
+  Stripes Generator (reproduction)
+  Inspired by: https://stripesgenerator.com (clean-room reimplementation -
+  repeating-linear-gradient stripes with optional animation).
+  What it does: generates CSS stripe backgrounds.
+  For Claude: self-contained. Output is a background declaration, plus a
+  keyframes block when animation is on.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stripes (repro)</title>
+<style>
+  body { margin:0; background:#0e0e10; color:#e8e8ea; font:14px/1.5 ui-monospace,monospace; }
+  header { padding:16px 20px; border-bottom:1px solid #26262b; }
+  h1 { font-size:15px; margin:0; }
+  h1 span { color:#8b8b93; font-weight:400; }
+  .bar { display:flex; flex-wrap:wrap; gap:14px; align-items:center; padding:12px 20px; background:#17171a; }
+  label { color:#8b8b93; display:flex; gap:8px; align-items:center; }
+  input { accent-color:#fb923c; background:#101013; color:#e8e8ea; border:1px solid #2c2c33; border-radius:6px; padding:4px 8px; }
+  input[type=color] { padding:1px 2px; width:42px; height:28px; }
+  button { background:#fb923c; color:#000; border:0; border-radius:6px; padding:6px 12px; font:inherit; cursor:pointer; }
+  #preview { height:calc(100vh - 130px); }
+</style>
+</head>
+<body>
+<header><h1>Stripes <span>- CSS stripe backgrounds - repro of stripesgenerator.com</span></h1></header>
+<div class="bar">
+  <label>Color A <input type="color" id="ca" value="#fb923c"></label>
+  <label>Color B <input type="color" id="cb" value="#0e0e10"></label>
+  <label>Width A <input type="range" id="wa" min="2" max="120" value="24"></label>
+  <label>Width B <input type="range" id="wb" min="2" max="120" value="24"></label>
+  <label>Angle <input type="range" id="angle" min="0" max="180" value="45"></label>
+  <label><input type="checkbox" id="anim"> Animate</label>
+  <label>Speed <input type="range" id="speed" min="1" max="20" value="6"></label>
+  <button id="copy">Copy CSS</button>
+</div>
+<div id="preview"></div>
+
+<script>
+function render() {
+  const ca = document.getElementById("ca").value, cb = document.getElementById("cb").value;
+  const wa = +document.getElementById("wa").value, wb = +document.getElementById("wb").value;
+  const angle = +document.getElementById("angle").value;
+  const anim = document.getElementById("anim").checked;
+  const speed = +document.getElementById("speed").value;
+  const period = wa + wb;
+  const grad = `repeating-linear-gradient(${angle}deg, ${ca} 0 ${wa}px, ${cb} ${wa}px ${period}px)`;
+  const prev = document.getElementById("preview");
+  prev.style.backgroundImage = grad;
+  // animation slides background-position along the stripe direction
+  let css = `background-image: ${grad};`;
+  if (anim) {
+    prev.style.backgroundSize = "200% 200%";
+    prev.style.animation = `stripes-slide ${Math.max(1, 22 - speed)}s linear infinite`;
+    css += `\nbackground-size: 200% 200%;\nanimation: stripes-slide ${Math.max(1, 22 - speed)}s linear infinite;\n\n@keyframes stripes-slide {\n  to { background-position: ${period * 4}px 0; }\n}`;
+  } else {
+    prev.style.backgroundSize = "";
+    prev.style.animation = "";
+  }
+  prev.dataset.css = css;
+}
+const style = document.createElement("style");
+style.textContent = "@keyframes stripes-slide { to { background-position: 200px 0; } }";
+document.head.appendChild(style);
+for (const id of ["ca","cb","wa","wb","angle","anim","speed"])
+  document.getElementById(id).oninput = render;
+document.getElementById("copy").onclick = async () => {
+  await navigator.clipboard.writeText(document.getElementById("preview").dataset.css);
+  document.getElementById("copy").textContent = "Copied!";
+  setTimeout(() => document.getElementById("copy").textContent = "Copy CSS", 1200);
+};
+render();
+</script>
+</body>
+</html>
