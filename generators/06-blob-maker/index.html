@@ -1,0 +1,101 @@
+<!doctype html>
+<!--
+  Blobmaker (reproduction)
+  Inspired by: https://www.blobmaker.app (by z creative labs; clean-room
+  reimplementation - random radial polygon + Chaikin smoothing).
+  What it does: generates organic blob shapes as SVG.
+  For Claude: self-contained. makeBlob() returns an SVG path string.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blobmaker (repro)</title>
+<style>
+  body { margin:0; background:#0e0e10; color:#e8e8ea; font:14px/1.5 ui-monospace,monospace; }
+  header { padding:16px 20px; border-bottom:1px solid #26262b; }
+  h1 { font-size:15px; margin:0; }
+  h1 span { color:#8b8b93; font-weight:400; }
+  .bar { display:flex; flex-wrap:wrap; gap:14px; align-items:center; padding:12px 20px; background:#17171a; }
+  label { color:#8b8b93; display:flex; gap:8px; align-items:center; }
+  input { accent-color:#facc15; background:#101013; color:#e8e8ea; border:1px solid #2c2c33; border-radius:6px; padding:4px 8px; }
+  input[type=color] { padding:1px 2px; width:42px; height:28px; }
+  button { background:#facc15; color:#000; border:0; border-radius:6px; padding:6px 12px; font:inherit; cursor:pointer; }
+  button.ghost { background:#26262c; color:#e8e8ea; }
+  #stage { display:flex; align-items:center; justify-content:center; height:calc(100vh - 130px); }
+  svg { max-width:70vmin; max-height:70vmin; }
+</style>
+</head>
+<body>
+<header><h1>Blobmaker <span>- organic SVG blobs - repro of blobmaker.app</span></h1></header>
+<div class="bar">
+  <label>Complexity <input type="range" id="points" min="3" max="12" value="6"></label>
+  <label>Contrast <input type="range" id="contrast" min="0" max="100" value="55"></label>
+  <label>Color <input type="color" id="color" value="#facc15"></label>
+  <button id="regen" class="ghost">Randomize</button>
+  <button id="copy">Copy SVG</button>
+</div>
+<div id="stage"><svg id="svg" viewBox="0 0 600 600"></svg></div>
+
+<script>
+// ---- CONFIG ----------------------------------------------------------
+const SIZE = 600, CENTER = SIZE / 2, RADIUS = SIZE * 0.42;
+const SMOOTH_PASSES = 4;  // Chaikin smoothing iterations
+// ----------------------------------------------------------------------
+let seed = Math.floor(Math.random() * 1e9);
+
+function rng(s) {
+  return function() {
+    s |= 0; s = s + 0x6D2B79F5 | 0;
+    let t = Math.imul(s ^ s >>> 15, 1 | s);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function chaikin(points) {
+  const out = [];
+  for (let i = 0; i < points.length; i++) {
+    const [x1, y1] = points[i];
+    const [x2, y2] = points[(i + 1) % points.length];
+    out.push([0.75*x1 + 0.25*x2, 0.75*y1 + 0.25*y2]);
+    out.push([0.25*x1 + 0.75*x2, 0.25*y1 + 0.75*y2]);
+  }
+  return out;
+}
+
+function makeBlob({ points, contrast, seed }) {
+  const rand = rng(seed);
+  let pts = [];
+  for (let i = 0; i < points; i++) {
+    const a = i / points * Math.PI * 2;
+    const r = RADIUS * (1 - contrast / 100 * 0.6 + rand() * contrast / 100 * 0.6);
+    pts.push([CENTER + Math.cos(a) * r, CENTER + Math.sin(a) * r]);
+  }
+  for (let i = 0; i < SMOOTH_PASSES; i++) pts = chaikin(pts);
+  return "M" + pts.map(p => p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" L") + " Z";
+}
+
+function render() {
+  const d = makeBlob({
+    points: +document.getElementById("points").value,
+    contrast: +document.getElementById("contrast").value,
+    seed
+  });
+  const color = document.getElementById("color").value;
+  const svg = document.getElementById("svg");
+  svg.innerHTML = `<path d="${d}" fill="${color}"/>`;
+  svg.dataset.out = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SIZE} ${SIZE}"><path d="${d}" fill="${color}"/></svg>`;
+}
+for (const id of ["points","contrast","color"])
+  document.getElementById(id).oninput = render;
+document.getElementById("regen").onclick = () => { seed = Math.floor(Math.random()*1e9); render(); };
+document.getElementById("copy").onclick = async () => {
+  await navigator.clipboard.writeText(document.getElementById("svg").dataset.out);
+  document.getElementById("copy").textContent = "Copied!";
+  setTimeout(() => document.getElementById("copy").textContent = "Copy SVG", 1200);
+};
+render();
+</script>
+</body>
+</html>
