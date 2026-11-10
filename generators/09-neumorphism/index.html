@@ -1,0 +1,100 @@
+<!doctype html>
+<!--
+  Neumorphism (reproduction)
+  Inspired by: https://neumorphism.io (by Adam Giebl, open source - this is
+  a clean-room reimplementation of the soft-UI shadow math).
+  What it does: generates neumorphic (soft UI) box-shadow CSS.
+  For Claude: self-contained. The generated CSS is a box-shadow plus
+  background rule; paste onto any card element.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neumorphism (repro)</title>
+<style>
+  body { margin:0; font:14px/1.5 ui-monospace,monospace; color:#1f2937; transition:background .2s; }
+  header { padding:16px 20px; }
+  h1 { font-size:15px; margin:0; }
+  h1 span { opacity:.55; font-weight:400; }
+  .bar { display:flex; flex-wrap:wrap; gap:14px; align-items:center; padding:12px 20px; }
+  label { display:flex; gap:8px; align-items:center; opacity:.75; }
+  input { accent-color:#6366f1; }
+  input[type=color] { width:42px; height:28px; padding:1px 2px; border:1px solid #0002; border-radius:6px; }
+  select { padding:4px 8px; border-radius:6px; border:1px solid #0002; }
+  button { background:#6366f1; color:#fff; border:0; border-radius:6px; padding:6px 12px; font:inherit; cursor:pointer; }
+  #stage { display:flex; align-items:center; justify-content:center; height:calc(100vh - 140px); }
+  #card { width:220px; height:220px; }
+  pre { margin:0 20px 20px; padding:14px; background:#0001; border-radius:8px; overflow:auto; font-size:12px; }
+</style>
+</head>
+<body>
+<header><h1>Neumorphism <span>- soft UI shadows - repro of neumorphism.io</span></h1></header>
+<div class="bar">
+  <label>Color <input type="color" id="color" value="#e0e5ec"></label>
+  <label>Size <input type="range" id="size" min="5" max="50" value="20"></label>
+  <label>Radius <input type="range" id="radius" min="0" max="110" value="40"></label>
+  <label>Blur <input type="range" id="blur" min="10" max="120" value="60"></label>
+  <label>Intensity <input type="range" id="intensity" min="1" max="60" value="18"></label>
+  <label>Shape
+    <select id="shape">
+      <option value="flat">flat</option>
+      <option value="concave">concave</option>
+      <option value="convex">convex</option>
+      <option value="pressed">pressed</option>
+    </select>
+  </label>
+  <button id="copy">Copy CSS</button>
+</div>
+<div id="stage"><div id="card"></div></div>
+<pre id="code"></pre>
+
+<script>
+function shade(hex, pct) {
+  // pct: -100..100, negative darkens
+  const n = [1,3,5].map(i => parseInt(hex.slice(i, i+2), 16));
+  const t = pct < 0 ? 0 : 255, p = Math.abs(pct) / 100;
+  return "#" + n.map(v => Math.round(v + (t - v) * p).toString(16).padStart(2,"0")).join("");
+}
+
+function render() {
+  const color = document.getElementById("color").value;
+  const d = +document.getElementById("size").value;
+  const radius = +document.getElementById("radius").value;
+  const blur = +document.getElementById("blur").value;
+  const inten = +document.getElementById("intensity").value;
+  const shape = document.getElementById("shape").value;
+  const light = shade(color, inten), dark = shade(color, -inten);
+
+  document.body.style.background = color;
+  let shadow, bg = color, extra = "";
+  if (shape === "pressed") {
+    shadow = `inset ${d}px ${d}px ${blur}px ${dark}, inset -${d}px -${d}px ${blur}px ${light}`;
+  } else {
+    shadow = `${d}px ${d}px ${blur}px ${dark}, -${d}px -${d}px ${blur}px ${light}`;
+    if (shape === "concave") bg = `linear-gradient(145deg, ${dark}, ${light})`;
+    if (shape === "convex")  bg = `linear-gradient(145deg, ${light}, ${dark})`;
+  }
+  const card = document.getElementById("card");
+  card.style.borderRadius = radius + "px";
+  card.style.boxShadow = shadow;
+  card.style.background = bg;
+
+  document.getElementById("code").textContent =
+`border-radius: ${radius}px;
+background: ${bg};
+box-shadow: ${shadow};`;
+  document.getElementById("code").dataset.css =
+`border-radius: ${radius}px;\nbackground: ${bg};\nbox-shadow: ${shadow};`;
+}
+for (const id of ["color","size","radius","blur","intensity","shape"])
+  document.getElementById(id).oninput = render;
+document.getElementById("copy").onclick = async () => {
+  await navigator.clipboard.writeText(document.getElementById("code").dataset.css);
+  document.getElementById("copy").textContent = "Copied!";
+  setTimeout(() => document.getElementById("copy").textContent = "Copy CSS", 1200);
+};
+render();
+</script>
+</body>
+</html>
