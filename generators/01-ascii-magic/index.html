@@ -1,0 +1,151 @@
+<!doctype html>
+<!--
+  ASCII Magic (reproduction)
+  Inspired by: https://ascii-magic.com (proprietary; this is a clean-room
+  reimplementation of the core effect - original code, no source copied).
+  What it does: converts an image into ASCII art rendered on canvas.
+  For Claude: self-contained, no dependencies. Tune the CONFIG block, or
+  embed the <script> core (imageToAscii) in any project.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASCII Magic (repro)</title>
+<style>
+  :root { --bg:#0e0e10; --panel:#17171a; --fg:#e8e8ea; --muted:#8b8b93; --accent:#7ee787; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 ui-monospace,monospace; }
+  header { padding:16px 20px; border-bottom:1px solid #26262b; }
+  h1 { font-size:15px; margin:0; font-weight:600; }
+  h1 span { color:var(--muted); font-weight:400; }
+  .bar { display:flex; flex-wrap:wrap; gap:14px; align-items:center; padding:12px 20px; background:var(--panel); }
+  .bar label { color:var(--muted); display:flex; gap:8px; align-items:center; }
+  select,input[type=number],input[type=range] { accent-color:var(--accent); background:#101013; color:var(--fg); border:1px solid #2c2c33; border-radius:6px; padding:4px 8px; }
+  button { background:var(--accent); color:#0b0b0c; border:0; border-radius:6px; padding:6px 12px; font:inherit; cursor:pointer; }
+  button.ghost { background:#26262c; color:var(--fg); }
+  #drop { margin:20px; padding:40px; border:1px dashed #3a3a42; border-radius:10px; text-align:center; color:var(--muted); cursor:pointer; }
+  canvas { display:block; margin:20px auto; max-width:calc(100% - 40px); background:#000; image-rendering:pixelated; }
+</style>
+</head>
+<body>
+<header><h1>ASCII Magic <span>- image to ASCII art - repro of ascii-magic.com</span></h1></header>
+<div class="bar">
+  <label>Charset
+    <select id="charset">
+      <option value="standard">standard</option>
+      <option value="dense">dense</option>
+      <option value="blocks">blocks</option>
+      <option value="binary">binary</option>
+      <option value="kana">katakana</option>
+    </select>
+  </label>
+  <label>Width (chars) <input type="range" id="width" min="40" max="300" value="140"></label>
+  <label>Color
+    <select id="mode">
+      <option value="green">terminal green</option>
+      <option value="white">white</option>
+      <option value="color">full color</option>
+    </select>
+  </label>
+  <label><input type="checkbox" id="invert"> Invert</label>
+  <button id="png">Download PNG</button>
+  <button id="txt" class="ghost">Download .txt</button>
+</div>
+<div id="drop">Drop an image here or click to choose<input type="file" id="file" accept="image/*" hidden></div>
+<canvas id="out"></canvas>
+
+<script>
+// ---- CONFIG ----------------------------------------------------------
+const CHAR_RAMPS = {
+  standard: " .:-=+*#%@",
+  dense:    " .'`^\",:;Il!i><~+_-?][}{1)(|/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
+  blocks:   " ░▒▓█",
+  binary:   " 01",
+  kana:     " ｱｶｻﾀﾅﾊﾏﾔﾗﾜｦﾝ"
+};
+const CHAR_ASPECT = 0.5;   // monospace glyphs are ~2x taller than wide
+const FONT = "12px ui-monospace, Menlo, Consolas, monospace";
+// ----------------------------------------------------------------------
+
+const out = document.getElementById("out");
+const octx = out.getContext("2d");
+let img = null, lastRows = null;
+
+function imageToAscii(image, cols, ramp, invert) {
+  const rows = Math.max(1, Math.round(cols * (image.height / image.width) * CHAR_ASPECT));
+  const off = document.createElement("canvas");
+  off.width = cols; off.height = rows;
+  const c = off.getContext("2d");
+  c.drawImage(image, 0, 0, cols, rows);
+  const data = c.getImageData(0, 0, cols, rows).data;
+  const grid = [];
+  for (let y = 0; y < rows; y++) {
+    const row = [];
+    for (let x = 0; x < cols; x++) {
+      const i = (y * cols + x) * 4;
+      const r = data[i], g = data[i+1], b = data[i+2];
+      let lum = (0.2126*r + 0.7152*g + 0.0722*b) / 255;
+      if (invert) lum = 1 - lum;
+      const ch = ramp[Math.min(ramp.length - 1, Math.floor(lum * ramp.length))];
+      row.push({ ch, r, g, b });
+    }
+    grid.push(row);
+  }
+  return grid;
+}
+
+function render() {
+  if (!img) return;
+  const ramp = CHAR_RAMPS[document.getElementById("charset").value];
+  const cols = +document.getElementById("width").value;
+  const mode = document.getElementById("mode").value;
+  const invert = document.getElementById("invert").checked;
+  const grid = imageToAscii(img, cols, ramp, invert);
+  lastRows = grid;
+  const cw = 7.2, chh = 12;                    // cell size for FONT above
+  out.width = Math.ceil(grid[0].length * cw);
+  out.height = grid.length * chh;
+  octx.fillStyle = "#000"; octx.fillRect(0, 0, out.width, out.height);
+  octx.font = FONT; octx.textBaseline = "top";
+  for (let y = 0; y < grid.length; y++)
+    for (let x = 0; x < grid[y].length; x++) {
+      const p = grid[y][x];
+      if (p.ch === " ") continue;
+      octx.fillStyle = mode === "color" ? `rgb(${p.r},${p.g},${p.b})`
+                     : mode === "green" ? "#7ee787" : "#e8e8ea";
+      octx.fillText(p.ch, x * cw, y * chh);
+    }
+}
+
+function loadFile(f) {
+  const url = URL.createObjectURL(f);
+  const im = new Image();
+  im.onload = () => { img = im; URL.revokeObjectURL(url); render(); };
+  im.src = url;
+}
+
+const drop = document.getElementById("drop");
+const file = document.getElementById("file");
+drop.onclick = () => file.click();
+file.onchange = e => e.target.files[0] && loadFile(e.target.files[0]);
+drop.ondragover = e => e.preventDefault();
+drop.ondrop = e => { e.preventDefault(); e.dataTransfer.files[0] && loadFile(e.dataTransfer.files[0]); };
+for (const id of ["charset","width","mode","invert"])
+  document.getElementById(id).oninput = render;
+
+document.getElementById("png").onclick = () => {
+  const a = document.createElement("a");
+  a.download = "ascii.png"; a.href = out.toDataURL("image/png"); a.click();
+};
+document.getElementById("txt").onclick = () => {
+  if (!lastRows) return;
+  const text = lastRows.map(r => r.map(p => p.ch).join("")).join("\n");
+  const a = document.createElement("a");
+  a.download = "ascii.txt";
+  a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  a.click();
+};
+</script>
+</body>
+</html>
