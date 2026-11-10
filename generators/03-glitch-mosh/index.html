@@ -1,0 +1,176 @@
+<!doctype html>
+<!--
+  Glitch Mosh (reproduction)
+  Inspired by: https://photomosh.com (now "Mosh"; proprietary - this is a
+  clean-room reimplementation of classic glitch effects).
+  What it does: RGB channel shift, slice displacement, pixel sorting,
+  scanlines - stackable glitch effects for images.
+  For Claude: self-contained. Each effect is a small function; lift what
+  you need or tune CONFIG defaults.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glitch Mosh (repro)</title>
+<style>
+  body { margin:0; background:#0e0e10; color:#e8e8ea; font:14px/1.5 ui-monospace,monospace; }
+  header { padding:16px 20px; border-bottom:1px solid #26262b; }
+  h1 { font-size:15px; margin:0; }
+  h1 span { color:#8b8b93; font-weight:400; }
+  .bar { display:flex; flex-wrap:wrap; gap:16px; align-items:center; padding:12px 20px; background:#17171a; }
+  fieldset { border:1px solid #2c2c33; border-radius:8px; padding:8px 12px; }
+  legend { color:#8b8b93; padding:0 6px; }
+  label { color:#8b8b93; display:flex; gap:8px; align-items:center; }
+  input { accent-color:#f472b6; background:#101013; color:#e8e8ea; border:1px solid #2c2c33; border-radius:6px; padding:2px 6px; }
+  button { background:#f472b6; border:0; border-radius:6px; padding:6px 12px; font:inherit; cursor:pointer; }
+  button.ghost { background:#26262c; color:#e8e8ea; }
+  #drop { margin:20px; padding:40px; border:1px dashed #3a3a42; border-radius:10px; text-align:center; color:#8b8b93; cursor:pointer; }
+  canvas { display:block; margin:20px auto; max-width:calc(100% - 40px); }
+</style>
+</head>
+<body>
+<header><h1>Glitch Mosh <span>- stackable glitch effects - repro of photomosh.com</span></h1></header>
+<div class="bar">
+  <fieldset><legend>RGB shift</legend>
+    <label>px <input type="range" id="rgbAmt" min="0" max="60" value="0"></label>
+    <label>angle <input type="range" id="rgbAng" min="0" max="360" value="0"></label>
+  </fieldset>
+  <fieldset><legend>Slices</legend>
+    <label>amount <input type="range" id="sliceAmt" min="0" max="40" value="0"></label>
+    <label>max shift <input type="range" id="sliceShift" min="0" max="120" value="40"></label>
+  </fieldset>
+  <fieldset><legend>Pixel sort</legend>
+    <label>threshold <input type="range" id="sortTh" min="0" max="255" value="255"></label>
+  </fieldset>
+  <label><input type="checkbox" id="scan"> Scanlines</label>
+  <button id="rand" class="ghost">Randomize</button>
+  <button id="png">Download PNG</button>
+</div>
+<div id="drop">Drop an image here or click to choose<input type="file" id="file" accept="image/*" hidden></div>
+<canvas id="out"></canvas>
+
+<script>
+// ---- CONFIG ----------------------------------------------------------
+const WORK_WIDTH = 800;  // working resolution (effects run at this size)
+// ----------------------------------------------------------------------
+const out = document.getElementById("out");
+const octx = out.getContext("2d");
+let src = null;  // offscreen canvas at working size
+
+function makeSrc(image) {
+  const w = Math.min(WORK_WIDTH, image.width);
+  const h = Math.round(w * image.height / image.width);
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  c.getContext("2d").drawImage(image, 0, 0, w, h);
+  return c;
+}
+
+function lum(r, g, b) { return 0.2126*r + 0.7152*g + 0.0722*b; }
+
+function pixelSort(canvas, threshold) {
+  const ctx = canvas.getContext("2d");
+  const { width: w, height: h } = canvas;
+  const id = ctx.getImageData(0, 0, w, h), d = id.data;
+  for (let y = 0; y < h; y++) {
+    let x = 0;
+    while (x < w) {
+      while (x < w && lum(d[(y*w+x)*4], d[(y*w+x)*4+1], d[(y*w+x)*4+2]) < threshold) x++;
+      let end = x;
+      while (end < w && lum(d[(y*w+end)*4], d[(y*w+end)*4+1], d[(y*w+end)*4+2]) >= threshold) end++;
+      if (end - x > 1) {
+        const seg = [];
+        for (let i = x; i < end; i++) {
+          const p = (y*w+i)*4;
+          seg.push([d[p], d[p+1], d[p+2], d[p+3]]);
+        }
+        seg.sort((a, b) => lum(a[0],a[1],a[2]) - lum(b[0],b[1],b[2]));
+        for (let i = x; i < end; i++) {
+          const p = (y*w+i)*4, s = seg[i - x];
+          d[p] = s[0]; d[p+1] = s[1]; d[p+2] = s[2]; d[p+3] = s[3];
+        }
+      }
+      x = end;
+    }
+  }
+  ctx.putImageData(id, 0, 0);
+}
+
+function rgbShift(canvas, amount, angleDeg) {
+  if (!amount) return;
+  const ctx = canvas.getContext("2d");
+  const { width: w, height: h } = canvas;
+  const id = ctx.getImageData(0, 0, w, h), d = id.data;
+  const copy = new Uint8ClampedArray(d);
+  const a = angleDeg * Math.PI / 180;
+  const dx = Math.round(Math.cos(a) * amount), dy = Math.round(Math.sin(a) * amount);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const i = (y*w + x) * 4;
+      const rx = x + dx, ry = y + dy, bx = x - dx, by = y - dy;
+      if (rx >= 0 && rx < w && ry >= 0 && ry < h) d[i]   = copy[(ry*w+rx)*4];
+      if (bx >= 0 && bx < w && by >= 0 && by < h) d[i+2] = copy[(by*w+bx)*4+2];
+    }
+  ctx.putImageData(id, 0, 0);
+}
+
+function slices(canvas, count, maxShift) {
+  if (!count) return;
+  const ctx = canvas.getContext("2d");
+  const { width: w, height: h } = canvas;
+  for (let i = 0; i < count; i++) {
+    const sy = Math.floor(Math.random() * h);
+    const sh = 2 + Math.floor(Math.random() * h / 20);
+    const dx = Math.round((Math.random() * 2 - 1) * maxShift);
+    const band = ctx.getImageData(0, sy, w, Math.min(sh, h - sy));
+    ctx.putImageData(band, dx, sy);
+  }
+}
+
+function scanlines(canvas) {
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  for (let y = 0; y < canvas.height; y += 3) ctx.fillRect(0, y, canvas.width, 1);
+}
+
+function render() {
+  if (!src) return;
+  out.width = src.width; out.height = src.height;
+  octx.drawImage(src, 0, 0);
+  const th = +document.getElementById("sortTh").value;
+  if (th < 255) pixelSort(out, th);
+  rgbShift(out, +document.getElementById("rgbAmt").value, +document.getElementById("rgbAng").value);
+  slices(out, +document.getElementById("sliceAmt").value, +document.getElementById("sliceShift").value);
+  if (document.getElementById("scan").checked) scanlines(out);
+}
+
+function loadFile(f) {
+  const url = URL.createObjectURL(f);
+  const im = new Image();
+  im.onload = () => { src = makeSrc(im); URL.revokeObjectURL(url); render(); };
+  im.src = url;
+}
+const drop = document.getElementById("drop"), file = document.getElementById("file");
+drop.onclick = () => file.click();
+file.onchange = e => e.target.files[0] && loadFile(e.target.files[0]);
+drop.ondragover = e => e.preventDefault();
+drop.ondrop = e => { e.preventDefault(); e.dataTransfer.files[0] && loadFile(e.dataTransfer.files[0]); };
+for (const id of ["rgbAmt","rgbAng","sliceAmt","sliceShift","sortTh","scan"])
+  document.getElementById(id).oninput = render;
+document.getElementById("rand").onclick = () => {
+  const set = (id, v) => document.getElementById(id).value = v;
+  set("rgbAmt", Math.floor(Math.random()*40));
+  set("rgbAng", Math.floor(Math.random()*360));
+  set("sliceAmt", Math.floor(Math.random()*25));
+  set("sliceShift", Math.floor(Math.random()*100));
+  set("sortTh", Math.random() < 0.5 ? 255 : 60 + Math.floor(Math.random()*140));
+  render();
+};
+document.getElementById("png").onclick = () => {
+  const a = document.createElement("a");
+  a.download = "glitch.png"; a.href = out.toDataURL("image/png"); a.click();
+};
+</script>
+</body>
+</html>
