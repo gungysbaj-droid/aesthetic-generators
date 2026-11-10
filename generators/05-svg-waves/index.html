@@ -1,0 +1,120 @@
+<!doctype html>
+<!--
+  SVG Waves (reproduction)
+  Inspired by: https://getwaves.io and https://www.svgwave.in (clean-room
+  reimplementation - layered sine-wave SVG paths).
+  What it does: generates layered SVG wave sections for page backgrounds.
+  For Claude: self-contained. buildWaves() returns an SVG string you can
+  paste straight into markup.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SVG Waves (repro)</title>
+<style>
+  body { margin:0; background:#0e0e10; color:#e8e8ea; font:14px/1.5 ui-monospace,monospace; }
+  header { padding:16px 20px; border-bottom:1px solid #26262b; }
+  h1 { font-size:15px; margin:0; }
+  h1 span { color:#8b8b93; font-weight:400; }
+  .bar { display:flex; flex-wrap:wrap; gap:14px; align-items:center; padding:12px 20px; background:#17171a; }
+  label { color:#8b8b93; display:flex; gap:8px; align-items:center; }
+  input { accent-color:#60a5fa; background:#101013; color:#e8e8ea; border:1px solid #2c2c33; border-radius:6px; padding:4px 8px; }
+  input[type=color] { padding:1px 2px; width:42px; height:28px; }
+  button { background:#60a5fa; border:0; border-radius:6px; padding:6px 12px; font:inherit; cursor:pointer; }
+  button.ghost { background:#26262c; color:#e8e8ea; }
+  #preview { display:block; width:100%; height:calc(100vh - 130px); }
+</style>
+</head>
+<body>
+<header><h1>SVG Waves <span>- layered wave backgrounds - repro of getwaves.io</span></h1></header>
+<div class="bar">
+  <label>Layers <input type="range" id="layers" min="1" max="6" value="3"></label>
+  <label>Waviness <input type="range" id="freq" min="1" max="8" value="3"></label>
+  <label>Height <input type="range" id="amp" min="10" max="100" value="45"></label>
+  <label>From <input type="color" id="c1" value="#0ea5e9"></label>
+  <label>To <input type="color" id="c2" value="#6366f1"></label>
+  <label><input type="checkbox" id="flip"> Flip (top)</label>
+  <button id="regen" class="ghost">Randomize</button>
+  <button id="copy">Copy SVG</button>
+</div>
+<div id="preview"></div>
+
+<script>
+// ---- CONFIG ----------------------------------------------------------
+const SVG_W = 1440, SVG_H = 320;  // viewBox of the generated SVG
+// ----------------------------------------------------------------------
+let seed = Math.floor(Math.random() * 1e9);
+
+function rng(s) {
+  return function() {
+    s |= 0; s = s + 0x6D2B79F5 | 0;
+    let t = Math.imul(s ^ s >>> 15, 1 | s);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function hexLerp(a, b, t) {
+  const pa = [1,3,5].map(i => parseInt(a.slice(i, i+2), 16));
+  const pb = [1,3,5].map(i => parseInt(b.slice(i, i+2), 16));
+  return "#" + pa.map((v, i) => Math.round(v + (pb[i]-v)*t).toString(16).padStart(2,"0")).join("");
+}
+
+function wavePath(rand, freq, amp, base) {
+  // sum of 3 sines with random phase, sampled as a smooth polyline
+  const sines = [];
+  for (let i = 0; i < 3; i++)
+    sines.push({ f: freq * (0.5 + rand()), ph: rand() * Math.PI * 2, a: amp / (i + 1) });
+  const pts = [];
+  for (let x = 0; x <= SVG_W; x += 12) {
+    let y = base;
+    for (const s of sines) y += Math.sin(x / SVG_W * Math.PI * 2 * s.f + s.ph) * s.a;
+    pts.push([x, y]);
+  }
+  let d = `M0 ${SVG_H} L${pts[0][0]} ${pts[0][1].toFixed(1)}`;
+  for (const [x, y] of pts.slice(1)) d += ` L${x} ${y.toFixed(1)}`;
+  return d + ` L${SVG_W} ${SVG_H} Z`;
+}
+
+function buildWaves({ layers, freq, amp, c1, c2, flip, seed }) {
+  const rand = rng(seed);
+  let paths = "";
+  for (let i = 0; i < layers; i++) {
+    const t = layers === 1 ? 0 : i / (layers - 1);
+    const color = hexLerp(c1, c2, t);
+    const base = SVG_H * (0.25 + 0.6 * t);
+    const opacity = (0.45 + 0.55 * t).toFixed(2);
+    paths += `<path d="${wavePath(rand, freq, amp, base)}" fill="${color}" opacity="${opacity}"/>`;
+  }
+  const transform = flip ? ` transform="rotate(180 ${SVG_W/2} ${SVG_H/2})"` : "";
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SVG_W} ${SVG_H}" preserveAspectRatio="none"${transform}>${paths}</svg>`;
+}
+
+function render() {
+  const svg = buildWaves({
+    layers: +document.getElementById("layers").value,
+    freq:   +document.getElementById("freq").value,
+    amp:    +document.getElementById("amp").value,
+    c1:     document.getElementById("c1").value,
+    c2:     document.getElementById("c2").value,
+    flip:   document.getElementById("flip").checked,
+    seed
+  });
+  const prev = document.getElementById("preview");
+  prev.innerHTML = svg;
+  const el = prev.querySelector("svg");
+  el.style.width = "100%"; el.style.height = "100%";
+  prev.dataset.svg = svg;
+}
+for (const id of ["layers","freq","amp","c1","c2","flip"])
+  document.getElementById(id).oninput = render;
+document.getElementById("regen").onclick = () => { seed = Math.floor(Math.random()*1e9); render(); };
+document.getElementById("copy").onclick = async () => {
+  await navigator.clipboard.writeText(document.getElementById("preview").dataset.svg);
+  document.getElementById("copy").textContent = "Copied!";
+  setTimeout(() => document.getElementById("copy").textContent = "Copy SVG", 1200);
+};
+render();
+</script>
+</body>
+</html>
