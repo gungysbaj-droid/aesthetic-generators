@@ -1,0 +1,98 @@
+<!doctype html>
+<!--
+  Mesh Gradient (reproduction)
+  Inspired by: https://www.meshgradient.com (clean-room reimplementation -
+  layered radial gradients, no source copied).
+  What it does: generates soft mesh-gradient backgrounds as pure CSS.
+  For Claude: self-contained. The "Copy CSS" output is a single
+  background-image declaration you can paste onto any element.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mesh Gradient (repro)</title>
+<style>
+  body { margin:0; background:#0e0e10; color:#e8e8ea; font:14px/1.5 ui-monospace,monospace; }
+  header { padding:16px 20px; border-bottom:1px solid #26262b; }
+  h1 { font-size:15px; margin:0; }
+  h1 span { color:#8b8b93; font-weight:400; }
+  .bar { display:flex; flex-wrap:wrap; gap:14px; align-items:center; padding:12px 20px; background:#17171a; }
+  label { color:#8b8b93; display:flex; gap:8px; align-items:center; }
+  input { accent-color:#a78bfa; background:#101013; color:#e8e8ea; border:1px solid #2c2c33; border-radius:6px; padding:4px 8px; }
+  button { background:#a78bfa; color:#000; border:0; border-radius:6px; padding:6px 12px; font:inherit; cursor:pointer; }
+  button.ghost { background:#26262c; color:#e8e8ea; }
+  .swatches { display:flex; gap:6px; }
+  .swatches input[type=color] { width:34px; height:28px; padding:1px 2px; }
+  #preview { height:calc(100vh - 130px); }
+</style>
+</head>
+<body>
+<header><h1>Mesh Gradient <span>- soft gradient backgrounds - repro of meshgradient.com</span></h1></header>
+<div class="bar">
+  <label>Colors <span class="swatches">
+    <input type="color" class="c" value="#c084fc">
+    <input type="color" class="c" value="#818cf8">
+    <input type="color" class="c" value="#f0abfc">
+    <input type="color" class="c" value="#fbbf24">
+  </span></label>
+  <label>Blobs <input type="range" id="count" min="3" max="10" value="6"></label>
+  <label>Spread <input type="range" id="spread" min="30" max="120" value="75"></label>
+  <label><input type="checkbox" id="grain"> Grain</label>
+  <button id="regen" class="ghost">Randomize</button>
+  <button id="copy">Copy CSS</button>
+</div>
+<div id="preview"></div>
+
+<script>
+// ---- CONFIG ----------------------------------------------------------
+const GRAIN_SVG = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E")`;
+// ----------------------------------------------------------------------
+let seed = Math.floor(Math.random() * 1e9);
+
+function rng(s) {
+  return function() {
+    s |= 0; s = s + 0x6D2B79F5 | 0;
+    let t = Math.imul(s ^ s >>> 15, 1 | s);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function buildCSS(colors, count, spread, seed, grain) {
+  const rand = rng(seed);
+  const layers = [];
+  for (let i = 0; i < count; i++) {
+    const x = Math.round(rand() * 100), y = Math.round(rand() * 100);
+    const size = Math.round(spread * (0.7 + rand() * 0.6));
+    const color = colors[i % colors.length];
+    layers.push(`radial-gradient(at ${x}% ${y}%, ${color} 0px, transparent ${size}%)`);
+  }
+  const base = colors[0];
+  let css = `background-color: ${base};\nbackground-image:\n  ${layers.join(",\n  ")};`;
+  if (grain) css = GRAIN_SVG + ",\n  " + css.split("background-image:\n  ")[1].replace(/;$/, "") +
+    `;\nbackground-color: ${base};\nmix-blend-mode: normal; /* overlay grain via extra element for best results */`;
+  return css;
+}
+
+function render() {
+  const colors = [...document.querySelectorAll(".c")].map(i => i.value);
+  const count = +document.getElementById("count").value;
+  const spread = +document.getElementById("spread").value;
+  const grain = document.getElementById("grain").checked;
+  const prev = document.getElementById("preview");
+  prev.style.cssText = buildCSS(colors, count, spread, seed, grain);
+  prev.dataset.css = buildCSS(colors, count, spread, seed, grain);
+}
+for (const el of document.querySelectorAll(".c, #count, #spread, #grain"))
+  el.oninput = render;
+document.getElementById("regen").onclick = () => { seed = Math.floor(Math.random()*1e9); render(); };
+document.getElementById("copy").onclick = async () => {
+  await navigator.clipboard.writeText(document.getElementById("preview").dataset.css);
+  document.getElementById("copy").textContent = "Copied!";
+  setTimeout(() => document.getElementById("copy").textContent = "Copy CSS", 1200);
+};
+render();
+</script>
+</body>
+</html>
