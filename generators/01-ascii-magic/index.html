@@ -24,6 +24,8 @@
   select,input[type=number],input[type=range] { accent-color:var(--accent); background:#101013; color:var(--fg); border:1px solid #2c2c33; border-radius:6px; padding:4px 8px; }
   button { background:var(--accent); color:#0b0b0c; border:0; border-radius:6px; padding:6px 12px; font:inherit; cursor:pointer; }
   button.ghost { background:#26262c; color:var(--fg); }
+  button:disabled { opacity:0.4; cursor:not-allowed; }
+  #status { margin:0 20px; color:var(--muted); }
   #drop { margin:20px; padding:40px; border:1px dashed #3a3a42; border-radius:10px; text-align:center; color:var(--muted); cursor:pointer; }
   canvas { display:block; margin:20px auto; max-width:calc(100% - 40px); background:#000; image-rendering:pixelated; }
 </style>
@@ -49,11 +51,12 @@
     </select>
   </label>
   <label><input type="checkbox" id="invert"> Invert</label>
-  <button id="png">Download PNG</button>
-  <button id="txt" class="ghost">Download .txt</button>
+  <button id="png" disabled>Download PNG</button>
+  <button id="txt" class="ghost" disabled>Download .txt</button>
 </div>
-<div id="drop">Drop an image here or click to choose<input type="file" id="file" accept="image/*" hidden></div>
-<canvas id="out"></canvas>
+<div id="drop" role="button" tabindex="0" aria-label="Choose an image">Drop an image here or click to choose<input type="file" id="file" accept="image/*" hidden></div>
+<p id="status" role="status">Images only. Videos are not supported.</p>
+<canvas id="out" aria-label="ASCII image preview"></canvas>
 
 <script>
 // ---- CONFIG ----------------------------------------------------------
@@ -64,7 +67,8 @@ const CHAR_RAMPS = {
   binary:   " 01",
   kana:     " ｱｶｻﾀﾅﾊﾏﾔﾗﾜｦﾝ"
 };
-const CHAR_ASPECT = 0.5;   // monospace glyphs are ~2x taller than wide
+const CELL_WIDTH = 7.2, CELL_HEIGHT = 12;
+const CHAR_ASPECT = CELL_WIDTH / CELL_HEIGHT; // match the actual rendered cell
 const FONT = "12px ui-monospace, Menlo, Consolas, monospace";
 // ----------------------------------------------------------------------
 
@@ -77,6 +81,7 @@ function imageToAscii(image, cols, ramp, invert) {
   const off = document.createElement("canvas");
   off.width = cols; off.height = rows;
   const c = off.getContext("2d");
+  c.fillStyle = "#000"; c.fillRect(0, 0, cols, rows);
   c.drawImage(image, 0, 0, cols, rows);
   const data = c.getImageData(0, 0, cols, rows).data;
   const grid = [];
@@ -103,7 +108,7 @@ function render() {
   const invert = document.getElementById("invert").checked;
   const grid = imageToAscii(img, cols, ramp, invert);
   lastRows = grid;
-  const cw = 7.2, chh = 12;                    // cell size for FONT above
+  const cw = CELL_WIDTH, chh = CELL_HEIGHT;                    // cell size for FONT above
   out.width = Math.ceil(grid[0].length * cw);
   out.height = grid.length * chh;
   octx.fillStyle = "#000"; octx.fillRect(0, 0, out.width, out.height);
@@ -118,23 +123,49 @@ function render() {
     }
 }
 
+let loadId = 0;
 function loadFile(f) {
+  const status = document.getElementById("status");
+  if (!f.type.startsWith("image/")) {
+    status.textContent = "Please choose an image. Videos and other files are not supported.";
+    return;
+  }
+  const id = ++loadId;
+  status.textContent = "Loading image...";
   const url = URL.createObjectURL(f);
   const im = new Image();
-  im.onload = () => { img = im; URL.revokeObjectURL(url); render(); };
+  im.onload = () => {
+    URL.revokeObjectURL(url);
+    if (id !== loadId) return;
+    img = im; render();
+    document.getElementById("png").disabled = false;
+    document.getElementById("txt").disabled = false;
+    status.textContent = `${f.name} - ${im.width} x ${im.height}. Ready to export.`;
+  };
+  im.onerror = () => {
+    URL.revokeObjectURL(url);
+    if (id === loadId) status.textContent = "This image could not be read. Try a PNG, JPEG or WebP image.";
+  };
   im.src = url;
 }
 
 const drop = document.getElementById("drop");
 const file = document.getElementById("file");
-drop.onclick = () => file.click();
-file.onchange = e => e.target.files[0] && loadFile(e.target.files[0]);
+drop.onclick = e => { if (e.target !== file) file.click(); };
+drop.onkeydown = e => {
+  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); file.click(); }
+};
+file.onchange = e => {
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+  file.value = ""; // allow retrying the same file
+};
 drop.ondragover = e => e.preventDefault();
 drop.ondrop = e => { e.preventDefault(); e.dataTransfer.files[0] && loadFile(e.dataTransfer.files[0]); };
 for (const id of ["charset","width","mode","invert"])
   document.getElementById(id).oninput = render;
 
 document.getElementById("png").onclick = () => {
+  if (!lastRows) return;
   const a = document.createElement("a");
   a.download = "ascii.png"; a.href = out.toDataURL("image/png"); a.click();
 };
@@ -143,8 +174,9 @@ document.getElementById("txt").onclick = () => {
   const text = lastRows.map(r => r.map(p => p.ch).join("")).join("\n");
   const a = document.createElement("a");
   a.download = "ascii.txt";
-  a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
-  a.click();
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+  a.href = url; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 </script>
 </body>
